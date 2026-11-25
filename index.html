@@ -11,20 +11,13 @@
   #wrap { position:relative; width:100%; max-width:480px; margin:0 auto; }
   video, canvas { width:100%; display:block; transform:scaleX(-1); }
   canvas { position:absolute; left:0; top:0; }
-  #leds { display:flex; justify-content:center; gap:10px; margin:12px; }
-  .led { width:52px; padding:10px 0; border-radius:50%; background:var(--off); font-size:12px; }
-  .led.on { background:var(--on); color:#000; font-weight:bold; }
   #status { font-size:14px; opacity:.8; padding:0 12px 20px; }
 </style>
 </head>
 <body>
-<button id="btn">1. Połącz z ESP32</button>
-<button id="cam">2. Start kamery</button>
+<button id="btn">Połącz z ESP32</button>
+<button id="cam">Start kamery</button>
 <div id="wrap"><video id="v" playsinline muted></video><canvas id="c"></canvas></div>
-<div id="leds">
-  <div class="led" id="l0">Kciuk</div><div class="led" id="l1">Wsk.</div>
-  <div class="led" id="l2">Środ.</div><div class="led" id="l3">Serd.</div><div class="led" id="l4">Mały</div>
-</div>
 <div id="status">Nie połączono</div>
 
 <script type="module">
@@ -84,7 +77,7 @@ function loop() {
     p.forEach(q => { ctx.beginPath(); ctx.arc(q.x * c.width, q.y * c.height, 4, 0, 7); ctx.fill(); });
   }
   let mask = 0;
-  up.forEach((on, i) => { $("l" + i).classList.toggle("on", on); if (on) mask |= 1 << i; });
+  up.forEach((on, i) => { if (on) mask |= 1 << i; });
   if (mask !== lastMask) {
     lastMask = mask;
     if (ch) ch.writeValueWithoutResponse(new Uint8Array([mask])).catch(() => {});
@@ -94,3 +87,4 @@ function loop() {
 </script>
 </body>
 </html>
+
