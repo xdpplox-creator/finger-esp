@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Palce → ESP32</title>
+<style>
+  :root { --bg:#111; --fg:#eee; --on:#2ee66b; --off:#333; }
+  body { margin:0; background:var(--bg); color:var(--fg); font-family:system-ui,sans-serif; text-align:center; }
+  button { font-size:18px; padding:12px 24px; margin:10px; border:0; border-radius:10px; background:#3b82f6; color:#fff; }
+  #wrap { position:relative; width:100%; max-width:480px; margin:0 auto; }
+  video, canvas { width:100%; display:block; transform:scaleX(-1); }
+  canvas { position:absolute; left:0; top:0; }
+  #leds { display:flex; justify-content:center; gap:10px; margin:12px; }
+  .led { width:52px; padding:10px 0; border-radius:50%; background:var(--off); font-size:12px; }
+  .led.on { background:var(--on); color:#000; font-weight:bold; }
+  #status { font-size:14px; opacity:.8; padding:0 12px 20px; }
+</style>
+</head>
+<body>
+<button id="btn">1. Połącz z ESP32</button>
+<button id="cam">2. Start kamery</button>
+<div id="wrap"><video id="v" playsinline muted></video><canvas id="c"></canvas></div>
+<div id="leds">
+  <div class="led" id="l0">Kciuk</div><div class="led" id="l1">Wsk.</div>
+  <div class="led" id="l2">Środ.</div><div class="led" id="l3">Serd.</div><div class="led" id="l4">Mały</div>
+</div>
+<div id="status">Nie połączono</div>
+
+<script type="module">
+import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+const SERVICE = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+const CHAR = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+const $ = id => document.getElementById(id);
+const status = t => $("status").textContent = t;
+let ch = null, lastMask = -1, landmarker = null;
+
+$("btn").onclick = async () => {
+  try {
+    const dev = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: "ESP32-Palce" }], optionalServices: [SERVICE] });
+    const server = await dev.gatt.connect();
+    const svc = await server.getPrimaryService(SERVICE);
+    ch = await svc.getCharacteristic(CHAR);
+    status("Połączono z ESP32 ✔");
+  } catch (e) { status("Bluetooth: " + e.message + " (potrzebny Chrome na Androidzie)"); }
+};
+
+$("cam").onclick = async () => {
+  try {
+    status("Ładowanie modelu…");
+    const fs = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+    landmarker = await HandLandmarker.createFromOptions(fs, {
+      baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task", delegate: "GPU" },
+      runningMode: "VIDEO", numHands: 1 });
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+    const v = $("v"); v.srcObject = stream; await v.play();
+    $("c").width = v.videoWidth; $("c").height = v.videoHeight;
+    status("Pokaż dłoń do kamery");
+    loop();
+  } catch (e) { status("Kamera: " + e.message); }
+};
+
+const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+function fingers(p) {
+  // kciuk: czubek dalej od podstawy małego palca niż jego staw
+  const thumb = d(p[4], p[17]) > d(p[3], p[17]) * 1.1;
+  // pozostałe: czubek dalej od nadgarstka niż staw PIP
+  const f = [[8,6],[12,10],[16,14],[20,18]].map(([t, j]) => d(p[0], p[t]) > d(p[0], p[j]) * 1.1);
+  return [thumb, ...f];
+}
+
+function loop() {
+  const v = $("v"), c = $("c"), ctx = c.getContext("2d");
+  const res = landmarker.detectForVideo(v, performance.now());
+  ctx.clearRect(0, 0, c.width, c.height);
+  let up = [false, false, false, false, false];
+  if (res.landmarks.length) {
+    const p = res.landmarks[0];
+    up = fingers(p);
+    ctx.fillStyle = "#2ee66b";
+    p.forEach(q => { ctx.beginPath(); ctx.arc(q.x * c.width, q.y * c.height, 4, 0, 7); ctx.fill(); });
+  }
+  let mask = 0;
+  up.forEach((on, i) => { $("l" + i).classList.toggle("on", on); if (on) mask |= 1 << i; });
+  if (mask !== lastMask) {
+    lastMask = mask;
+    if (ch) ch.writeValueWithoutResponse(new Uint8Array([mask])).catch(() => {});
+  }
+  requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>
